@@ -25,22 +25,23 @@
          (clean-val (string-trim '(#\Space #\Tab #\Newline #\Return) val-str)))
     (if (string= clean-val "<=50K") 0 1)))
 
-(defun load-and-prep-data ()
-  ;;(format t "Loading and preparing data... (This takes a moment)~%")
+;; CHANGED: Now accepts a filename argument
+(defun load-and-prep-data (filename)
+  (format t "Loading and preparing data from: ~a... (This takes a moment)~%" filename)
 
   (let* (;; --- load csv ---
-         (all-string-data (load-csv "../data/adult_income_cleaned.csv"))
+         (all-string-data (load-csv filename))
          (data-size (length all-string-data))
          (all-mixed-data (mapcar #'convert-row-to-mixed-types all-string-data))
          (ohe-maps (build-ohe-maps all-mixed-data))
 
          ;; ============================================================
          ;; For KNN, Logistic Regression, Naive Bayes.
-         ;; - Removes 'Income' (Col 13). 
+         ;; - Removes 'Income' (Col 13).
          ;; - Keeps 'Hours' (Col 11).
          ;; - Uses One-Hot Encoding.
          ;; ============================================================
-         (all-X-classification 
+         (all-X-classification
            (mapcar #'(lambda (row) (apply-ohe (subseq row 0 13) ohe-maps)) all-mixed-data))
 
          ;; ============================================================
@@ -48,9 +49,9 @@
          ;; - Removes 'Income' (Col 13).
          ;; - Uses One-Hot Encoding.
          ;; ============================================================
-         (all-X-regression 
-           (mapcar #'(lambda (row) 
-                       (let ((masked-row (subseq row 0 13))) 
+         (all-X-regression
+           (mapcar #'(lambda (row)
+                       (let ((masked-row (subseq row 0 13)))
                          (setf (nth 11 masked-row) 0) (apply-ohe masked-row ohe-maps))) all-mixed-data))
 
          ;; ============================================================
@@ -92,7 +93,7 @@
          (y-regression-train (build-subset all-y-regression train-indices))
          (y-regression-test  (build-subset all-y-regression test-indices))
 
-         ;; --- NORMALIZATION (Z-Score) ---         
+         ;; --- NORMALIZATION (Z-Score) ---
          (stats-class (calculate-column-stats x-classification-train))
          (norm-x-class-train (mapcar #'(lambda (r) (apply-normalization-to-row r stats-class)) x-classification-train))
          (norm-x-class-test (mapcar #'(lambda (r) (apply-normalization-to-row r stats-class)) x-classification-test))
@@ -110,11 +111,11 @@
 
 (defun run-knn (data k)
     (format t "Algorithm: KNN~%")
-  
+
   (let* (
          (x-train (getf data :x-class-train))
          (y-train (getf data :y-class-train))
-         
+
          ;; Renaming original full lists so we can slice them
          (x-full  (getf data :x-class-test))
          (y-full  (getf data :y-class-test))
@@ -123,8 +124,8 @@
          (y-test (subseq y-full 0 (min (length y-full) 100)))
 
          ;; --- DEFINE VARIABLES (Init to 0/nil) ---
-         (start 0) 
-         (end 0) 
+         (start 0)
+         (end 0)
          (time 0.0)
          (sloc 0)
          (preds nil))
@@ -137,7 +138,7 @@
 
     ;; end timer
     (setf end (get-internal-real-time))
-    
+
     ;; calc and print
     (setf time (/ (- end start) internal-time-units-per-second))
 
@@ -145,21 +146,21 @@
     (format t "KNN Accuracy: ~5f~%" (calc-accuracy preds y-test))
     (format t "Metric 3 SLOC: ~a~%" (get-sloc "knn.lisp"))
 
-    
+
     ))
 
 (defun run-logistic-regression (data learning-rate epochs l2-penalty)
-  (format t "Algorithm: Logistic Regression~%")  
+  (format t "Algorithm: Logistic Regression~%")
   (let* ((x-train (getf data :x-class-train))
          (y-train (getf data :y-class-train))
          (x-test  (getf data :x-class-test))
          (y-test  (getf data :y-class-test))
-         
+
          ;; 1. DEFINE VARIABLES (Init to 0/nil)
          (start 0) (end 0) (time 0.0)
-         (model nil) 
-         (w nil) 
-         (b nil) 
+         (model nil)
+         (w nil)
+         (b nil)
          (preds nil)
          (sloc 0)
          )
@@ -179,31 +180,31 @@
     (setf b (second model))
     (setf preds (mapcar #'(lambda (row) (logistic-predict row w b)) x-test))
 
-    ;; print 
+    ;; print
     (format t "Train time: ~,4f seconds~%" time)
     (format t "Metric 1 Accuracy: ~5f~%" (calc-accuracy preds y-test))
     (format t "Metric 2 Macro-F1: ~5f~%" (calc-macro-f1 preds y-test))
     ;;(format t "Metric 3 SLOC: ~a~%" sloc)
-    
-    
-    (format nil "Acc: ~,3f" (calc-accuracy preds y-test)) 
+
+
+    (format nil "Acc: ~,3f" (calc-accuracy preds y-test))
     (format nil "F1: ~,3f" (calc-macro-f1 preds y-test))
     (format t "Metric 3 SLOC: ~a~%" (get-sloc "logistic_regression.lisp"))
 
     ))
 
 (defun run-linear-regression (data l2-penalty)
-  (format t "Algorithm: Linear Regression ~%")  
+  (format t "Algorithm: Linear Regression ~%")
   (let* ((x-train (getf data :x-reg-train))
          (y-train (getf data :y-reg-train))
          (x-test  (getf data :x-reg-test))
          (y-test  (getf data :y-reg-test))
-         
-         (start 0) 
+
+         (start 0)
          (end 0)
           (time 0.0)
-         (weights nil) 
-         (preds nil)        
+         (weights nil)
+         (preds nil)
           (sloc 0)
 )
 
@@ -227,21 +228,21 @@
     (format t "Metric 2 R^2:  ~5f~%" (calc-r2 preds y-test))
     (format t "Metric 3 SLOC: ~a~%" (get-sloc "linear_regression.lisp"))
 
-    
-)) 
+
+))
 
 (defun run-id3 (data max-depth n-bins)
-  (format t "Algorithm: Decision Tree~%")  
+  (format t "Algorithm: Decision Tree~%")
   (let* ((x-train (getf data :x-id3-train))
          (y-train (getf data :y-class-train))
          (x-test  (getf data :x-id3-test))
          (y-test  (getf data :y-class-test))
-         
-         
+
+
          (start 0)
-         (end 0) 
+         (end 0)
          (time 0.0)
-         (tree nil) 
+         (tree nil)
          (preds nil)
          (sloc 0)
          (cols (loop :for i :below 13 :collect i)))
@@ -268,14 +269,14 @@
 
 (defun run-naive (data)
   (format t "Algorithm: Naive Bayes~%")
-  
+
   (let* ((x-train (getf data :x-class-train))
          (y-train (getf data :y-class-train))
          (x-test  (getf data :x-class-test))
          (y-test  (getf data :y-class-test))
-         
-         (start 0) 
-         (end 0) 
+
+         (start 0)
+         (end 0)
          (time 0.0)
          (model nil)
           (preds nil)
@@ -296,7 +297,7 @@
     ;; run prediction
     (setf preds (mapcar #'(lambda (row) (predict-nb-row row model)) x-test))
 
-    ;; print 
+    ;; print
     (format t "Train time: ~,4f seconds~%" time)
     (format t "Metric 1 Accuracy: ~5f~%" (calc-accuracy preds y-test))
     (format t "Metric 2 Macro-F1: ~5f~%" (calc-macro-f1 preds y-test))
@@ -308,20 +309,21 @@
 
 (defun handle-cli-args ()
   (let ((args sb-ext:*posix-argv*))
-    
+
     ;; Check if running in Script Mode (Arguments present)
     (if (> (length args) 1)
         (progn
-          ;; 1. Auto-load data
-          (let ((data (load-and-prep-data))
-                ;; 2. Extract the Algorithm Name
-                (algo (get-cli-arg args "--algo" ""))) 
-            
-            (cond 
+          ;; CHANGED: Read --train flag, default to standard path
+          (let* ((train-file (get-cli-arg args "--train" "../data/adult_income_cleaned.csv"))
+                 (data (load-and-prep-data train-file))
+                 ;; 2. Extract the Algorithm Name
+                 (algo (get-cli-arg args "--algo" "")))
+
+            (cond
               ;; --- KNN ---
               ;; Command: --algo knn --k (int)
               ((string-equal algo "knn")
-               (let ((k (get-cli-arg args "--k" 2))) 
+               (let ((k (get-cli-arg args "--k" 2)))
                  (run-knn data k)))
 
               ;; --- LOGISTIC ---
@@ -345,16 +347,6 @@
                      (bins  (get-cli-arg args "--n_bins" 10)))  ;; 10 default
                  (run-id3 data depth bins)))
 
-           ;;  ((string-equal algo "all") 
-           ;;    (progn 
-           ;;      (run-knn data 8)
-           ;;      (run-logistic data 0.1 100 0.01 7)
-           ;;      (run-naive data)
-           ;;      (run-id3 data 5 10)
-           ;;      (run-linear data 0.1)
-           ;;      (format t "~%All Lisp Tests Finished Successfully.~%")))
-              
-              
               ;; --- NAIVE BAYES ---
               ;; Command: --algo nb
               ((string-equal algo "nb")
