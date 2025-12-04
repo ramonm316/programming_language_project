@@ -10,6 +10,7 @@ NC='\033[0m' # No Color
 DATA_LOADED=0
 CURRENT_IMPL=""
 RESULTS_FILE="results.txt"
+SELECTED_FILE=""
 
 # Clear results file on start
 > "$RESULTS_FILE"
@@ -79,14 +80,14 @@ load_data() {
         return 1
     fi
 
-    local selected_file="${DATASETS[$((choice-1))]}"
+    SELECTED_FILE="${DATASETS[$((choice-1))]}"
     echo -e "\n${GREEN}[$(timestamp)] Starting Script${NC}"
-    echo -e "${GREEN}[$(timestamp)] Loading training data set: $selected_file${NC}"
+    echo -e "${GREEN}[$(timestamp)] Loading training data set: $SELECTED_FILES${NC}"
 
     # Get file info
-    if [ -f "../data/$selected_file" ]; then
-        local cols=$(head -1 "../data/$selected_file" | tr ',' '\n' | wc -l)
-        local rows=$(($(wc -l < "../data/$selected_file") - 1))
+    if [ -f "../data/$SELECTED_FILE" ]; then
+        local cols=$(head -1 "../data/$SELECTED_FILE" | tr ',' '\n' | wc -l)
+        local rows=$(($(wc -l < "../data/$SELECTED_FILE") - 1))
 
         echo -e "${GREEN}[$(timestamp)] Total Columns Read: $cols${NC}"
         echo -e "${GREEN}[$(timestamp)] Total Rows Read: $rows${NC}"
@@ -95,6 +96,7 @@ load_data() {
         echo -e "\n${GREEN}Data loaded successfully!${NC}"
     else
         echo -e "${RED}Error: File not found.${NC}"
+        DATA_LOADED = 0
         return 1
     fi
 }
@@ -120,6 +122,8 @@ run_linear_regression() {
 
     local start_time=$(date +%s.%N)
 
+    local DATA_PATH="../data/$SELECTED_FILE"
+
     case $CURRENT_IMPL in
         "C")
             cd ../proc
@@ -127,8 +131,8 @@ run_linear_regression() {
                 echo "Compiling C++ implementation..."
                 make clean && make -j4 > /dev/null 2>&1
             fi
-            ./program --train ../data/adult_income_cleaned.csv \
-                     --test ../data/adult_income_cleaned.csv \
+            ./program --train "$DATA_PATH" \
+                     --test "$DATA_PATH" \
                      --target "$target" \
                      --algo linear \
                      --l2 "$l2" \
@@ -139,9 +143,9 @@ run_linear_regression() {
             cd ../oop-java
             if [ ! -f "app/Main.class" ]; then
                 echo "Compiling Java implementation..."
-                javac $(find . -name "*.java") > /dev/null 2>&1
+                javac $(find . -name "*.java")
             fi
-            echo "2" | java app.Main --train ../data/adult_income_cleaned.csv \
+            echo "2" | java app.Main --train "$DATA_PATH" \
                                     --normalize \
                                     --target "$target" \
                                     --l2 "$l2" 2>&1 | tee /tmp/output.txt
@@ -149,7 +153,7 @@ run_linear_regression() {
             ;;
         "Lisp")
             cd ../fp
-            sbcl --script main.lisp --algo linear --l2 "$l2" 2>&1 | tee /tmp/output.txt
+            sbcl --script main.lisp --algo linear --train "$DATA_PATH" --l2 "$l2" 2>&1 | tee /tmp/output.txt
             cd ../scripts
             ;;
     esac
@@ -196,6 +200,8 @@ run_logistic_regression() {
 
     local start_time=$(date +%s.%N)
 
+    local DATA_PATH="../data/$SELECTED_FILE"
+
     case $CURRENT_IMPL in
         "C")
             cd ../proc
@@ -203,8 +209,8 @@ run_logistic_regression() {
                 echo "Compiling C++ implementation..."
                 make clean && make -j4 > /dev/null 2>&1
             fi
-            ./program --train ../data/adult_income_cleaned.csv \
-                     --test ../data/adult_income_cleaned.csv \
+            ./program --train "$DATA_PATH" \
+                     --test "$DATA_PATH" \
                      --target "$target" \
                      --algo logistic \
                      --lr "$lr" \
@@ -219,16 +225,18 @@ run_logistic_regression() {
                 echo "Compiling Java implementation..."
                 javac $(find . -name "*.java") > /dev/null 2>&1
             fi
-            printf "1\n3\n" | java app.Main --train ../data/adult_income_cleaned.csv \
+            printf "1\n3\n" | stdbuf -oL java app.Main --train "$DATA_PATH" \
                                     --normalize \
                                     --lr "$lr" \
                                     --epochs "$epochs" \
-                                    --l2 "$l2" 2>&1 | tee /tmp/output.txt
+                                    --l2 "$l2" \
+                                    --seed "$seed" 2>&1 | tee /tmp/output.txt
             cd ../scripts
             ;;
         "Lisp")
             cd ../fp
             sbcl --script main.lisp --algo logistic \
+                 --train "$DATA_PATH" \
                  --lr "$lr" --epochs "$epochs" --l2 "$l2" 2>&1 | tee /tmp/output.txt
             cd ../scripts
             ;;
@@ -263,6 +271,7 @@ run_knn() {
     echo "*******"
 
     local start_time=$(date +%s.%N)
+    local DATA_PATH="../data/$SELECTED_FILE"
 
     case $CURRENT_IMPL in
         "C")
@@ -270,8 +279,8 @@ run_knn() {
             if [ ! -f "program" ]; then
                 make clean && make -j4 > /dev/null 2>&1
             fi
-            ./program --train ../data/adult_income_cleaned.csv \
-                     --test ../data/adult_income_cleaned.csv \
+            ./program --train "$DATA_PATH" \
+                     --test "$DATA_PATH" \
                      --target income \
                      --algo knn \
                      --k "$k" \
@@ -283,14 +292,14 @@ run_knn() {
             if [ ! -f "app/Main.class" ]; then
                 javac $(find . -name "*.java") > /dev/null 2>&1
             fi
-            echo "4" | java app.Main --train ../data/adult_income_cleaned.csv \
+            echo "4" | java app.Main --train "$DATA_PATH" \
                                     --normalize \
                                     --k "$k" 2>&1 | tee /tmp/output.txt
             cd ../scripts
             ;;
         "Lisp")
             cd ../fp
-            sbcl --script main.lisp --algo knn --k "$k" 2>&1 | tee /tmp/output.txt
+            sbcl --script main.lisp --algo knn --train "$DATA_PATH" --k "$k" 2>&1 | tee /tmp/output.txt
             cd ../scripts
             ;;
     esac
@@ -325,6 +334,7 @@ run_decision_tree() {
     echo "*******"
 
     local start_time=$(date +%s.%N)
+    local DATA_PATH="../data/$SELECTED_FILE"
 
     case $CURRENT_IMPL in
         "C")
@@ -332,8 +342,8 @@ run_decision_tree() {
             if [ ! -f "program" ]; then
                 make clean && make -j4 > /dev/null 2>&1
             fi
-            ./program --train ../data/adult_income_cleaned.csv \
-                     --test ../data/adult_income_cleaned.csv \
+            ./program --train "$DATA_PATH" \
+                     --test "$DATA_PATH" \
                      --target income \
                      --algo tree \
                      --max_depth "$depth" \
@@ -345,7 +355,7 @@ run_decision_tree() {
             if [ ! -f "app/Main.class" ]; then
                 javac $(find . -name "*.java") > /dev/null 2>&1
             fi
-            echo "5" | java app.Main --train ../data/adult_income_cleaned.csv \
+            echo "5" | java app.Main --train "$DATA_PATH" \
                                     --normalize \
                                     --max_depth "$depth" \
                                     --bins "$bins" 2>&1 | tee /tmp/output.txt
@@ -354,6 +364,7 @@ run_decision_tree() {
         "Lisp")
             cd ../fp
             sbcl --script main.lisp --algo tree \
+                 --train "$DATA_PATH" \
                  --max_depth "$depth" --n_bins "$bins" 2>&1 | tee /tmp/output.txt
             cd ../scripts
             ;;
@@ -386,6 +397,7 @@ run_naive_bayes() {
     echo "*******"
 
     local start_time=$(date +%s.%N)
+    local DATA_PATH="../data/$SELECTED_FILE"
 
     case $CURRENT_IMPL in
         "C")
@@ -393,8 +405,8 @@ run_naive_bayes() {
             if [ ! -f "program" ]; then
                 make clean && make -j4 > /dev/null 2>&1
             fi
-            ./program --train ../data/adult_income_cleaned.csv \
-                     --test ../data/adult_income_cleaned.csv \
+            ./program --train "$DATA_PATH" \
+                     --test "$DATA_PATH" \
                      --target income \
                      --algo nb \
                      --normalize 2>&1 | tee /tmp/output.txt
@@ -405,14 +417,14 @@ run_naive_bayes() {
             if [ ! -f "app/Main.class" ]; then
                 javac $(find . -name "*.java") > /dev/null 2>&1
             fi
-            echo "6" | java app.Main --train ../data/adult_income_cleaned.csv \
+            echo "6" | java app.Main --train "$DATA_PATH" \
                                     --normalize \
                                     --smoothing "$smooth" 2>&1 | tee /tmp/output.txt
             cd ../scripts
             ;;
         "Lisp")
             cd ../fp
-            sbcl --script main.lisp --algo nb 2>&1 | tee /tmp/output.txt
+            sbcl --script main.lisp --algo nb --train "$DATA_PATH" 2>&1 | tee /tmp/output.txt
             cd ../scripts
             ;;
     esac
