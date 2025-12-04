@@ -13,44 +13,56 @@ public class Main {
 
     public static void main(String[] args) {
         ArgParser ap = new ArgParser(args);
-        
-        try (Scanner in = new Scanner(System.in)) {
-            int opt = 0;
 
-            // Check if there is input piped to the application 
-            if (in.hasNextLine()) {
+        try (Scanner in = new Scanner(System.in)) {
+            while (in.hasNextLine()) {
+                int opt = 0;
+
                 try {
                     String line = in.nextLine().trim();
-                    if (!line.isEmpty()) {
-                        opt = Integer.parseInt(line);
-                    }
+                    if (line.isEmpty()) continue;
+                    opt = Integer.parseInt(line);
                 } catch (NumberFormatException e) {
-                    // Ignore invalid input
+                    continue;
                 }
-            } else {
-                // No input provided via pipe
-                return;
+                System.out.println("DEBUG: processing option " + opt);
+                System.out.flush();
+
+                if(opt==8) return;
+
+                if(opt==1) {
+                    try { loadData(ap); }
+                    catch (Exception e) { System.out.println("Error loading data: " + e.getMessage()); }
+                }
+                if(opt==2) runLinear(ap);
+                if(opt==3) runLogistic(ap);
+                if(opt==4) runKNN(ap);
+                if(opt==5) runTree(ap);
+                if(opt==6) runGNB(ap);
+                if(opt==7) printResults();
+
+                System.out.flush()
             }
 
-            if(opt==8) return;
-            if(opt==1) loadData(ap);
-            if(opt==2) runLinear(ap);
-            if(opt==3) runLogistic(ap);
-            if(opt==4) runKNN(ap);
-            if(opt==5) runTree(ap);
-            if(opt==6) runGNB(ap);
-            if(opt==7) printResults();
-            
         } catch (Exception e) {
             System.out.println("Error: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    // --- Helper to ensure data is loaded before running algorithms ---
+    private static void ensureDataLoaded(ArgParser ap) throws Exception {
+        if (TRAIN == null) {
+            loadData(ap);
         }
     }
 
     private static void loadData(ArgParser ap) throws Exception {
-        String path = ap.get("train", "../data/adult_income_cleaned.csv"); 
+        String path = ap.get("train", "../data/adult_income_cleaned.csv");
         boolean normalize = ap.has("normalize");
         System.out.println("Loading "+path+" (normalize="+normalize+") ...");
         long t0 = System.nanoTime();
+        // Uses the classification loader by default for options 3,4,5,6
         Dataset.TrainTest tt = AdultPipeline.loadClassification(path, "income", normalize, 0.2, 42);
         TRAIN = tt.train; TEST = tt.test;
         double secs = (System.nanoTime()-t0)/1e9;
@@ -62,7 +74,6 @@ public class Main {
         String trainPath = args.get("train", "../data/adult_income_cleaned.csv");
         String target = args.get("target", "hours.per.week");
         boolean normalize = args.has("normalize");
-        double testFrac  = 0.2; 
         double l2 = args.getDouble("l2", 1.0);
         long seed = (long) args.getDouble("seed", 42.0);
 
@@ -73,10 +84,9 @@ public class Main {
 
         Timer t = new Timer();
         t.start();
-        Dataset.TrainTest tt = AdultPipeline.loadRegression(trainPath, target, normalize, testFrac, seed);
+        Dataset.TrainTest tt = AdultPipeline.loadRegression(trainPath, target, normalize, 0.2, seed);
         double loadSecs = t.seconds();
-        System.out.printf("Loaded regression dataset in %.3f s (%d train, %d test, %d features)%n",
-                loadSecs, tt.train.X.length, tt.test.X.length, tt.train.featureNames.length);
+        System.out.printf("Loaded regression dataset in %.3f s%n", loadSecs);
 
         LinearRegression model = new LinearRegression(l2);
         t.start();
@@ -97,51 +107,76 @@ public class Main {
     }
 
     private static void runLogistic(ArgParser ap){
+        System.out.println("DEBUG");
+        System.out.flush();
+
+        // Ensure data is loaded
+        try { ensureDataLoaded(ap); } catch (Exception e) { System.out.println(e.getMessage()); return; }
+
+        System.out.println("DEBUG: Data");
+
         double lr = ap.getDouble("lr", 0.001);
         int epochs = ap.getInt("epochs", 3000);
         double l2 = ap.getDouble("l2", 1.0);
         long seed = 7;
         String srcRoot = ap.get("srcroot", ".");
 
-        if (TRAIN==null){ System.out.println("Load data first (option 1)."); return; }
-        
-        Timer t = new Timer(); t.start();
-        LogisticRegression m = new LogisticRegression(lr, epochs, l2, seed);
-        m.fit(TRAIN);
-        double secs = t.seconds();
-        double[] pred = m.predict(TEST.X);
-        double acc = Metrics.accuracy(TEST.y, pred);
-        double f1  = Metrics.macroF1(TEST.y, pred);
-        int sloc = SLOC.forClass(LogisticRegression.class, srcRoot);
+        System.out.printf("DEBUG: lr=%.4f, epochs=%d, l2=%.4f%n", lr, epochs, l2);
+        System.out.flush();
 
-        System.out.println("\nLogistic Regression (closed-form):");
-        System.out.println("********************************");
-        System.out.println("Input option 1: Lr = " + lr);
-        System.out.println("Input option 2: epoch = " + epochs);
-        System.out.println("Input option 3: L2 = " + l2);
-        System.out.printf("Train time: %.4f s%n", secs);
-        System.out.printf("Accuracy: %.4f%n", acc);
-        System.out.printf("Macro-F1: %.4f%n", f1);
-        System.out.println("SLOC: " + sloc + "\n");
-        log(m.name(), secs, "Accuracy", acc, "Macro-F1", f1, sloc);
+        try {
+
+            Timer t = new Timer();
+            t.start();
+            LogisticRegression m = new LogisticRegression(lr, epochs, l2, seed);
+
+            System.out.println("DEBUG: Staring fit");
+            m.fit(TRAIN);
+            double secs = t.seconds();
+            System.out.println("DEBUG: fit complete");
+
+            double[] pred = m.predict(TEST.X);
+            double acc = Metrics.accuracy(TEST.y, pred);
+            double f1  = Metrics.macroF1(TEST.y, pred);
+            int sloc = SLOC.forClass(LogisticRegression.class, srcRoot);
+
+            System.out.println("\nLogistic Regression (closed-form):");
+            System.out.println("********************************");
+            System.out.println("Input option 1: Lr = " + lr);
+            System.out.println("Input option 2: epoch = " + epochs);
+            System.out.println("Input option 3: L2 = " + l2);
+            System.out.printf("Train time: %.4f s%n", secs);
+            System.out.printf("Accuracy: %.4f%n", acc);
+            System.out.printf("Macro-F1: %.4f%n", f1);
+            System.out.println("SLOC: " + sloc + "\n");
+            System.out.flush();
+            log(m.name(), secs, "Accuracy", acc, "Macro-F1", f1, sloc);
+        } catch (Exception e) {
+            System.out.println("Error in run Logsitic: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
-    private static void runKNN(ml.helpers.ArgParser ap){
-        if (TRAIN==null){ System.out.println("Load data first (option 1)."); return; }
-        
+    private static void runKNN(ArgParser ap){
+        // Ensure data is loaded
+        try { ensureDataLoaded(ap); } catch (Exception e) { System.out.println(e.getMessage()); return; }
+
         int k = ap.getInt("k", 15);
+        String srcRoot = ap.get("srcroot", ".");
+
         String distance = ap.get("distance", "euclidean");
         boolean weighted = ap.has("weighted");
-        String tie = ap.get("tie", "smallest");
-        int sloc = SLOC.forClass(KNN.class, ap.get("srcroot","."));
+        String tie = ap.get("tie", "random");
 
-        ml.helpers.Timer t = new ml.helpers.Timer(); t.start();
-        ml.models.KNN m = new ml.models.KNN(k, distance, weighted, tie, 0L);
+        Timer t = new Timer(); t.start();
+        KNN m = new KNN(k, distance, weighted, tie, 0L);
         m.fit(TRAIN);
         double secs = t.seconds();
         double[] pred = m.predict(TEST.X);
         double acc = Metrics.accuracy(TEST.y, pred);
         double f1  = Metrics.macroF1(TEST.y, pred);
+
+        int sloc = SLOC.forClass(KNN.class, srcRoot);
 
         System.out.println("\nK-Nearest Neightbors:");
         System.out.println("********************************");
@@ -154,19 +189,22 @@ public class Main {
     }
 
     private static void runTree(ArgParser ap){
-        if (TRAIN==null){ System.out.println("Load data first (option 1)."); return; }
+        // Ensure data is loaded
+        try { ensureDataLoaded(ap); } catch (Exception e) { System.out.println(e.getMessage()); return; }
+
         int maxDepth   = ap.getInt("max_depth", 5);
         int minSamples = ap.getInt("min_samples", 10);
         int nBins      = ap.getInt("bins", 16);
+        String srcRoot = ap.get("srcroot", ".");
 
         Timer t = new Timer(); t.start();
-        ml.models.DecisionTree m = new ml.models.DecisionTree(maxDepth, minSamples, nBins);
+        DecisionTree m = new DecisionTree(maxDepth, 10, nBins);
         m.fit(TRAIN);
         double secs = t.seconds();
         double[] pred = m.predict(TEST.X);
         double acc = Metrics.accuracy(TEST.y, pred);
         double f1  = Metrics.macroF1(TEST.y, pred);
-        int sloc = SLOC.forClass(DecisionTree.class, ap.get("srcroot","."));
+        int sloc = SLOC.forClass(DecisionTree.class, srcRoot);
 
         System.out.println("\nDecision Tree:");
         System.out.println("********************************");
@@ -181,17 +219,20 @@ public class Main {
     }
 
     private static void runGNB(ArgParser ap){
-        if (TRAIN==null){ System.out.println("Load data first (option 1)."); return; }
+        // Ensure data is loaded
+        try { ensureDataLoaded(ap); } catch (Exception e) { System.out.println(e.getMessage()); return; }
+
         double smooth = ap.getDouble("smoothing", 1e-1);
+        String srcRoot = ap.get("srcroot", ".");
 
         Timer t = new Timer(); t.start();
-        ml.models.GaussianNaiveBayes m = new ml.models.GaussianNaiveBayes(smooth);
+        GaussianNaiveBayes m = new GaussianNaiveBayes(smooth);
         m.fit(TRAIN);
         double secs = t.seconds();
         double[] pred = m.predict(TEST.X);
         double acc = Metrics.accuracy(TEST.y, pred);
         double f1  = Metrics.macroF1(TEST.y, pred);
-        int sloc = SLOC.forClass(GaussianNaiveBayes.class, ap.get("srcroot","."));
+        int sloc = SLOC.forClass(GaussianNaiveBayes.class, srcRoot);
 
         System.out.println("\nGaussian Naive Bayes:");
         System.out.println("********************************");
